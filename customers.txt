@@ -1,0 +1,2 @@
+CUST0001,Dev Shah,devil20@gmail.com,9573569852,fKnHetKLuJkOB0s0Gd0+5A==
+CUST0002,Varshil,lol@gmail.com,9922985490,ONtpB+ht0bMaFEQnMEVv2A==
