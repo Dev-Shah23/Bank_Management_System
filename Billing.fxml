@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
+
+<!--
+    Billing.fxml
+    Scene Builder layout file for the Billing / Statement screen.
+    Rubric: Scene Builder and various other components usage
+    Controller: BillingController.java
+-->
+<BorderPane xmlns="http://javafx.com/javafx"
+            xmlns:fx="http://javafx.com/fxml"
+            fx:controller="BillingController"
+            stylesheets="@application.css"
+            prefWidth="600" prefHeight="580">
+
+    <!-- ── Top Header Bar ─────────────────────────────────── -->
+    <top>
+        <VBox styleClass="header-bar" spacing="4">
+            <Label fx:id="headerTitle" text="Billing Statement"
+                   style="-fx-font-size:20px; -fx-font-weight:bold; -fx-text-fill:white;"/>
+            <Label fx:id="headerSubtitle" text="Account Summary"
+                   style="-fx-font-size:13px; -fx-text-fill:#bbdefb;"/>
+        </VBox>
+    </top>
+
+    <!-- ── Center: Summary Card + Transaction Table ───────── -->
+    <center>
+        <VBox spacing="16" style="-fx-background-color:#f0f4ff; -fx-padding:20;">
+
+            <!-- Summary Card -->
+            <VBox styleClass="card" spacing="8">
+                <Label text="Account Summary" styleClass="title-text"
+                       style="-fx-font-size:16px;"/>
+                <Separator/>
+
+                <GridPane hgap="20" vgap="8">
+                    <!-- Row 0 -->
+                    <Label text="Account No:"     style="-fx-font-weight:bold;" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+                    <Label fx:id="lblAccountNo"   text="—"                      GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+                    <!-- Row 1 -->
+                    <Label text="Account Type:"   style="-fx-font-weight:bold;" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+                    <Label fx:id="lblAccountType" text="—"                      GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+                    <!-- Row 2 -->
+                    <Label text="Customer Name:"  style="-fx-font-weight:bold;" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+                    <Label fx:id="lblCustomerName" text="—"                     GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+                    <!-- Row 3 -->
+                    <Label text="Current Balance:" style="-fx-font-weight:bold;" GridPane.columnIndex="0" GridPane.rowIndex="3"/>
+                    <Label fx:id="lblBalance"      text="Rs. 0.00"
+                           styleClass="balance-text"                            GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+                    <!-- Row 4 -->
+                    <Label text="Total Transactions:" style="-fx-font-weight:bold;" GridPane.columnIndex="0" GridPane.rowIndex="4"/>
+                    <Label fx:id="lblTotalTx"         text="0"                      GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+                </GridPane>
+            </VBox>
+
+            <!-- Transaction History Table -->
+            <VBox styleClass="card" spacing="8" VBox.vgrow="ALWAYS">
+                <Label text="Transaction History" style="-fx-font-size:15px; -fx-font-weight:bold; -fx-text-fill:#1a237e;"/>
+                <Separator/>
+                <TableView fx:id="transactionTable" VBox.vgrow="ALWAYS" maxHeight="220">
+                    <columns>
+                        <TableColumn fx:id="colEntry" text="Transaction Log" prefWidth="480"/>
+                    </columns>
+                    <placeholder>
+                        <Label text="No transactions yet."/>
+                    </placeholder>
+                </TableView>
+            </VBox>
+
+            <!-- Buttons -->
+            <HBox spacing="12" alignment="CENTER_RIGHT">
+                <Button fx:id="btnPrint"  text="Print Statement"
+                        styleClass="btn-success"  onAction="#handlePrint"/>
+                <Button fx:id="btnBack"   text="Back to Dashboard"
+                        styleClass="btn-primary"  onAction="#handleBack"/>
+            </HBox>
+
+        </VBox>
+    </center>
+
+</BorderPane>

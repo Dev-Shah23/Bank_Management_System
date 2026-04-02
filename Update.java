@@ -1,5 +1,6 @@
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.BiConsumer;
 
 /**
  * Update.java
@@ -7,8 +8,12 @@ import java.util.concurrent.Executors;
  * Each transaction runs in its own thread using ExecutorService.
  *
  * Concepts: Multithreading (Runnable, Thread),
- *           Synchronization (synchronized methods in Account_Info),
- *           ExecutorService (thread pool)
+ * Synchronization (synchronized methods in Account_Info),
+ * ExecutorService (thread pool)
+ *
+ * FIX: callback is now BiConsumer<Boolean, String>
+ * Boolean = success or failure
+ * String = message to show on the UI
  */
 public class Update {
 
@@ -23,41 +28,24 @@ public class Update {
 
     // ─── Public Transaction Methods (called from JavaFX UI) ───────
 
-    /**
-     * Runs a deposit in a background thread.
-     * @param accountNumber account to deposit into
-     * @param amount        amount to deposit
-     * @param onComplete    callback runnable to refresh UI after done
-     */
-    public void depositAsync(String accountNumber, double amount, Runnable onComplete) {
+    public void depositAsync(String accountNumber, double amount,
+            BiConsumer<Boolean, String> onComplete) {
         threadPool.execute(new TransactionThread(
-            "DEPOSIT", accountNumber, null, amount, onComplete
-        ));
+                "DEPOSIT", accountNumber, null, amount, onComplete));
     }
 
-    /**
-     * Runs a withdrawal in a background thread.
-     */
-    public void withdrawAsync(String accountNumber, double amount, Runnable onComplete) {
+    public void withdrawAsync(String accountNumber, double amount,
+            BiConsumer<Boolean, String> onComplete) {
         threadPool.execute(new TransactionThread(
-            "WITHDRAW", accountNumber, null, amount, onComplete
-        ));
+                "WITHDRAW", accountNumber, null, amount, onComplete));
     }
 
-    /**
-     * Runs a transfer in a background thread.
-     */
     public void transferAsync(String fromAccount, String toAccount,
-                              double amount, Runnable onComplete) {
+            double amount, BiConsumer<Boolean, String> onComplete) {
         threadPool.execute(new TransactionThread(
-            "TRANSFER", fromAccount, toAccount, amount, onComplete
-        ));
+                "TRANSFER", fromAccount, toAccount, amount, onComplete));
     }
 
-    /**
-     * Shuts down the thread pool gracefully.
-     * Call this when the app closes.
-     */
     public void shutdown() {
         threadPool.shutdown();
         System.out.println("[Update] Thread pool shut down.");
@@ -65,110 +53,129 @@ public class Update {
 
     // ─── Inner Runnable Class ─────────────────────────────────────
 
-    /**
-     * TransactionThread.java (inner class)
-     * Represents a single transaction task that runs on a thread.
-     * Concept: Runnable interface, Thread
-     */
     private class TransactionThread implements Runnable {
 
         private String type;
         private String fromAccountNumber;
         private String toAccountNumber;
         private double amount;
-        private Runnable onComplete;
+        private BiConsumer<Boolean, String> onComplete;
 
         public TransactionThread(String type, String fromAccountNumber,
-                                 String toAccountNumber, double amount,
-                                 Runnable onComplete) {
-            this.type              = type;
+                String toAccountNumber, double amount,
+                BiConsumer<Boolean, String> onComplete) {
+            this.type = type;
             this.fromAccountNumber = fromAccountNumber;
-            this.toAccountNumber   = toAccountNumber;
-            this.amount            = amount;
-            this.onComplete        = onComplete;
+            this.toAccountNumber = toAccountNumber;
+            this.amount = amount;
+            this.onComplete = onComplete;
         }
 
         @Override
         public void run() {
             System.out.println("[Thread " + Thread.currentThread().getName() +
-                               "] Starting " + type + " of ₹" + amount);
+                    "] Starting " + type + " of " + amount);
 
             Account_Info fromAccount = manager.findAccount(fromAccountNumber);
-
             if (fromAccount == null) {
-                System.out.println("[Thread] Account not found: " + fromAccountNumber);
-                runCallback();
+                runCallback(false, "Account not found: " + fromAccountNumber);
                 return;
             }
 
             boolean success = false;
+            String message = "";
 
             switch (type) {
+
                 case "DEPOSIT":
-                    fromAccount.deposit(amount);
-                    success = true;
+                    if (amount <= 0) {
+                        message = "Deposit amount must be greater than zero.";
+                    } else {
+                        fromAccount.deposit(amount);
+                        success = true;
+                        message = "Deposited Rs." + String.format("%.2f", amount) + " successfully!";
+                    }
                     break;
 
                 case "WITHDRAW":
-                    success = fromAccount.withdraw(amount);
+                    if (amount <= 0) {
+                        message = "Withdrawal amount must be greater than zero.";
+                    } else if (fromAccount.getBalance() < amount) {
+                        message = "Insufficient funds! Available balance: Rs."
+                                + String.format("%.2f", fromAccount.getBalance());
+                    } else {
+                        success = fromAccount.withdraw(amount);
+                        message = success
+                                ? "Withdrew Rs." + String.format("%.2f", amount) + " successfully!"
+                                : "Withdrawal failed. Please try again.";
+                    }
                     break;
 
                 case "TRANSFER":
+                    if (toAccountNumber == null || toAccountNumber.trim().isEmpty()) {
+                        message = "Please enter a target account number.";
+                        break;
+                    }
                     Account_Info toAccount = manager.findAccount(toAccountNumber);
                     if (toAccount == null) {
-                        System.out.println("[Thread] Target account not found: " + toAccountNumber);
+                        // ← THIS is the fix: nonexistent account now returns a clear message
+                        message = "Target account \"" + toAccountNumber + "\" does not exist.";
+                        break;
+                    }
+                    if (toAccountNumber.equals(fromAccountNumber)) {
+                        message = "Cannot transfer to the same account.";
+                        break;
+                    }
+                    if (fromAccount.getBalance() < amount) {
+                        message = "Insufficient funds! Available balance: Rs."
+                                + String.format("%.2f", fromAccount.getBalance());
                         break;
                     }
                     success = fromAccount.transfer(amount, toAccount);
+                    message = success
+                            ? "Transferred Rs." + String.format("%.2f", amount)
+                                    + " to " + toAccountNumber + " successfully!"
+                            : "Transfer failed. Please try again.";
                     break;
 
                 default:
-                    System.out.println("[Thread] Unknown transaction type: " + type);
+                    message = "Unknown transaction type: " + type;
             }
 
-            // Save updated state to file
-            if (success) {
+            if (success)
                 manager.saveToFiles();
-                System.out.println("[Thread " + Thread.currentThread().getName() +
-                                   "] " + type + " completed successfully.");
-            } else {
-                System.out.println("[Thread " + Thread.currentThread().getName() +
-                                   "] " + type + " failed.");
-            }
 
-            runCallback();
+            System.out.println("[Thread " + Thread.currentThread().getName() +
+                    "] " + (success ? "SUCCESS" : "FAILED") + ": " + message);
+
+            runCallback(success, message);
         }
 
-        // Run the UI callback on JavaFX thread
-        private void runCallback() {
+        private void runCallback(boolean success, String message) {
             if (onComplete != null) {
-                javafx.application.Platform.runLater(onComplete);
+                javafx.application.Platform.runLater(() -> onComplete.accept(success, message));
             }
         }
     }
 
-    // ─── Background Daemon Thread: Interest Calculator ────────────
+    // ─── Daemon Thread: Interest Calculator ──────────────────────
 
-    /**
-     * Starts a daemon thread that calculates and applies interest
-     * every 60 seconds for SAVINGS accounts.
-     * Concept: Daemon Thread, synchronized account methods
-     */
     public void startInterestCalculator(CustomerManager manager) {
-        Thread interestThread = new Thread(() -> {
+        Thread t = new Thread(() -> {
             System.out.println("[Interest] Calculator thread started.");
             while (true) {
                 try {
-                    Thread.sleep(60_000); // every 60 seconds
+                    Thread.sleep(60_000);
                     for (Customer_Info<Account_Info> customer : manager.getAllCustomers()) {
                         Account_Info account = customer.getAccountData();
-                        if (account == null) continue;
+                        if (account == null)
+                            continue;
                         if (account.getAccountType() == Account_Info.AccountType.SAVINGS) {
-                            double interest = account.getBalance() * 0.005; // 0.5% per interval
+                            double interest = account.getBalance() * 0.005;
                             account.deposit(interest);
-                            System.out.println("[Interest] Applied ₹" +
-                                String.format("%.2f", interest) +
-                                " interest to account " + account.getAccountNumber());
+                            System.out.println("[Interest] Applied Rs."
+                                    + String.format("%.2f", interest)
+                                    + " to " + account.getAccountNumber());
                         }
                     }
                     manager.saveToFiles();
@@ -178,32 +185,25 @@ public class Update {
                 }
             }
         });
-
-        interestThread.setDaemon(true); // dies when app closes
-        interestThread.setName("Interest-Calculator");
-        interestThread.start();
+        t.setDaemon(true);
+        t.setName("Interest-Calculator");
+        t.start();
     }
 
-    // ─── Background Daemon Thread: Low Balance Alert ─────────────
+    // ─── Daemon Thread: Low Balance Alert ────────────────────────
 
-    /**
-     * Starts a daemon thread that monitors all accounts
-     * and prints an alert if balance drops below ₹500.
-     * Concept: Daemon Thread
-     */
     public void startLowBalanceAlert(CustomerManager manager) {
-        Thread alertThread = new Thread(() -> {
+        Thread t = new Thread(() -> {
             System.out.println("[Alert] Low balance monitor started.");
             while (true) {
                 try {
-                    Thread.sleep(30_000); // check every 30 seconds
+                    Thread.sleep(30_000);
                     for (Customer_Info<Account_Info> customer : manager.getAllCustomers()) {
                         Account_Info account = customer.getAccountData();
                         if (account != null && account.getBalance() < 500.0) {
-                            System.out.println("[ALERT] Low balance! Customer: " +
-                                customer.getName() + " | Account: " +
-                                account.getAccountNumber() + " | Balance: ₹" +
-                                account.getBalance());
+                            System.out.println("[ALERT] Low balance! "
+                                    + customer.getName() + " | Rs."
+                                    + String.format("%.2f", account.getBalance()));
                         }
                     }
                 } catch (InterruptedException e) {
@@ -212,9 +212,8 @@ public class Update {
                 }
             }
         });
-
-        alertThread.setDaemon(true);
-        alertThread.setName("LowBalance-Alert");
-        alertThread.start();
+        t.setDaemon(true);
+        t.setName("LowBalance-Alert");
+        t.start();
     }
 }

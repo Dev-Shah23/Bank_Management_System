@@ -12,7 +12,8 @@ import javafx.stage.Stage;
  * Transaction screen — handles Deposit, Withdraw, and Transfer.
  * Each transaction is submitted as a background thread via Update.java.
  *
- * Concept: JavaFX basics, calls Update.java for threading
+ * FIX: now uses BiConsumer<Boolean, String> callback so errors from
+ *      the background thread (e.g. nonexistent account) show on the UI.
  */
 public class Account_Register {
 
@@ -35,17 +36,17 @@ public class Account_Register {
         Account_Info account = customer.getAccountData();
 
         // ── Header ───────────────────────────────────────────────
-        Label title = new Label("💸 Transactions");
+        Label title = new Label("Transactions");
         title.setFont(Font.font("Arial", FontWeight.BOLD, 20));
         title.setTextFill(Color.DARKBLUE);
 
-        Label balanceLabel = new Label("Current Balance: ₹" +
+        Label balanceLabel = new Label("Current Balance: Rs." +
             (account != null ? String.format("%.2f", account.getBalance()) : "0.00"));
         balanceLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
         balanceLabel.setTextFill(Color.DARKGREEN);
 
         // ── Transaction Type Selector ────────────────────────────
-        ToggleGroup typeGroup = new ToggleGroup();
+        ToggleGroup typeGroup   = new ToggleGroup();
         RadioButton depositBtn  = new RadioButton("Deposit");
         RadioButton withdrawBtn = new RadioButton("Withdraw");
         RadioButton transferBtn = new RadioButton("Transfer");
@@ -59,98 +60,115 @@ public class Account_Register {
 
         // ── Amount Field ─────────────────────────────────────────
         TextField amountField = new TextField();
-        amountField.setPromptText("Enter amount (₹)");
+        amountField.setPromptText("Enter amount (Rs.)");
         amountField.setMaxWidth(280);
 
-        // ── Transfer Target Field (shown only for Transfer) ──────
+        // ── Transfer Target Field ────────────────────────────────
+        Label targetLabel = new Label("Target Account Number:");
+        targetLabel.setVisible(false);
+
         TextField targetAccountField = new TextField();
-        targetAccountField.setPromptText("Target Account Number");
+        targetAccountField.setPromptText("e.g. ACC000002");
         targetAccountField.setMaxWidth(280);
         targetAccountField.setVisible(false);
 
-        Label targetLabel = new Label("Target Account:");
-        targetLabel.setVisible(false);
-
         transferBtn.setOnAction(e -> {
-            targetAccountField.setVisible(true);
             targetLabel.setVisible(true);
+            targetAccountField.setVisible(true);
         });
         depositBtn.setOnAction(e -> {
-            targetAccountField.setVisible(false);
             targetLabel.setVisible(false);
+            targetAccountField.setVisible(false);
         });
         withdrawBtn.setOnAction(e -> {
-            targetAccountField.setVisible(false);
             targetLabel.setVisible(false);
+            targetAccountField.setVisible(false);
         });
 
-        // ── Feedback Label ───────────────────────────────────────
+        // ── Feedback Label (shows success OR error from thread) ──
         Label feedbackLabel = new Label("");
         feedbackLabel.setFont(Font.font("Arial", 13));
+        feedbackLabel.setWrapText(true);
+        feedbackLabel.setMaxWidth(300);
 
-        // ── Submit Button ────────────────────────────────────────
+        // ── Submit Button ─────────────────────────────────────────
         Button submitBtn = new Button("Submit Transaction");
         submitBtn.setStyle("-fx-background-color: #1a73e8; -fx-text-fill: white;" +
                            "-fx-font-size: 14px; -fx-padding: 10 30 10 30;" +
                            "-fx-background-radius: 5;");
 
         submitBtn.setOnAction(e -> {
+
+            // ── Validate amount input ─────────────────────────────
             double amount;
             try {
                 amount = Double.parseDouble(amountField.getText().trim());
                 if (amount <= 0) throw new NumberFormatException();
             } catch (NumberFormatException ex) {
                 feedbackLabel.setTextFill(Color.RED);
-                feedbackLabel.setText("Enter a valid positive amount.");
+                feedbackLabel.setText("Please enter a valid positive amount.");
                 return;
             }
 
             if (account == null) {
                 feedbackLabel.setTextFill(Color.RED);
-                feedbackLabel.setText("No account linked.");
+                feedbackLabel.setText("No account linked to this customer.");
                 return;
             }
 
+            // ── Disable button & show processing ─────────────────
             submitBtn.setDisable(true);
             feedbackLabel.setTextFill(Color.GRAY);
             feedbackLabel.setText("Processing...");
 
-            // Determine transaction type and run on background thread
+            // ── Build the callback — this runs on JavaFX thread ──
+            // Boolean success: true = green message, false = red message
+            // String message: exact error or success text from Update.java
+            java.util.function.BiConsumer<Boolean, String> callback = (success, message) -> {
+                submitBtn.setDisable(false);
+                if (success) {
+                    feedbackLabel.setTextFill(Color.GREEN);
+                    // Refresh balance display on success
+                    balanceLabel.setText("Current Balance: Rs." +
+                        String.format("%.2f", account.getBalance()));
+                    amountField.clear();
+                    targetAccountField.clear();
+                } else {
+                    feedbackLabel.setTextFill(Color.RED);
+                }
+                feedbackLabel.setText(message);
+            };
+
+            // ── Submit to correct async method ────────────────────
             RadioButton selected = (RadioButton) typeGroup.getSelectedToggle();
             String type = selected.getText();
 
-            Runnable onComplete = () -> {
-                submitBtn.setDisable(false);
-                balanceLabel.setText("Current Balance: ₹" +
-                    String.format("%.2f", account.getBalance()));
-                feedbackLabel.setTextFill(Color.GREEN);
-                feedbackLabel.setText(type + " of ₹" + amount + " completed!");
-                amountField.clear();
-                targetAccountField.clear();
-            };
-
             switch (type) {
                 case "Deposit":
-                    updateService.depositAsync(account.getAccountNumber(), amount, onComplete);
+                    updateService.depositAsync(account.getAccountNumber(), amount, callback);
                     break;
+
                 case "Withdraw":
-                    updateService.withdrawAsync(account.getAccountNumber(), amount, onComplete);
+                    updateService.withdrawAsync(account.getAccountNumber(), amount, callback);
                     break;
+
                 case "Transfer":
                     String target = targetAccountField.getText().trim();
                     if (target.isEmpty()) {
-                        feedbackLabel.setTextFill(Color.RED);
-                        feedbackLabel.setText("Enter target account number.");
                         submitBtn.setDisable(false);
+                        feedbackLabel.setTextFill(Color.RED);
+                        feedbackLabel.setText("Please enter a target account number.");
                         return;
                     }
-                    updateService.transferAsync(account.getAccountNumber(), target, amount, onComplete);
+                    updateService.transferAsync(
+                        account.getAccountNumber(), target, amount, callback
+                    );
                     break;
             }
         });
 
         // ── Back Button ──────────────────────────────────────────
-        Button backBtn = new Button("← Back to Dashboard");
+        Button backBtn = new Button("Back to Dashboard");
         backBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: gray;");
         backBtn.setOnAction(e -> {
             Dashboard dashboard = new Dashboard(stage, manager, customer);
@@ -181,7 +199,7 @@ public class Account_Register {
         root.setPadding(new Insets(30));
         root.setStyle("-fx-background-color: #f0f4ff;");
 
-        stage.setScene(new Scene(root, 520, 560));
+        stage.setScene(new Scene(root, 520, 580));
         stage.show();
     }
 }
